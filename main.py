@@ -92,7 +92,7 @@ nulist=[]
 ###inside the fan###
 philist_fan = []
 nulist_fan = []
-a = 5  # starting y coordinate (point at x=0, y=a)
+a = 1  # starting y coordinate (point at x=0, y=a)
 #flow total pressure
 p_tot = pe*(1+(gamma-1)/2*Me**2)**(gamma/(gamma-1))
 
@@ -120,7 +120,7 @@ else:
 #############################
 #####MAIN LOOP###############
 #############################
-
+print("Computing...")
 #get states in uniform region
 while shockwave==False:
     #fill in missing values
@@ -159,7 +159,7 @@ plt.scatter(0, a, color='red', label=f"Start (0,{a})")
 shear_anchor = (0, a)
 start_points = [shear_anchor] * N_chars   # nozzle lip
 reflected = [False] * N_chars       # track if ray has bounced
-print("Computing...")
+
 for i in range(len(nulist) - 1):  # for each fan
     
     # ## Shear Line ##
@@ -284,10 +284,15 @@ for i in range(len(nulist) - 1):  # for each fan
 
 print('Computed, see graph.')
 
-plt.legend()
+#plt.legend()
 
 plt.xlabel("x")
 plt.ylabel("y")
 plt.title("Lines from (0,a) at given angles")
 plt.grid(True)
 plt.show()
+
+
+#Idea for tomorrow: Instead of plotting everything for a temp list, store in a dataframe or matrix and plot at the end.
+#This way I can write further reflections and locate them on the previous characteristic lines and then modify the
+#previous line bounds to be cut off at the intersection point.
