@@ -17,6 +17,18 @@ def compute_PM_angle(M, gamma):
     
     return nu
 
+def compute_mach(PM,gamma):
+    for M in np.arange(1.0, 3.0, 0.01):
+        nu=compute_PM_angle(M,gamma)
+        if np.isclose(nu, PM, atol=1e-2):
+            Mach=M
+            break
+    if Mach is not None:
+        return Mach
+    else:
+        raise ValueError("No Mach number found for given Prandtl-Meyer angle.")
+    
+
 def do_MOC_plus(phi1=None, nu1=None, phi2=None, nu2=None):
     '''Method of Characteristics
     Inputs: three of phi1, nu1, phi2, nu2
@@ -89,7 +101,6 @@ while shockwave==False:
         #get phi
         phi_new=do_MOC_plus(nu1=nulist[-2], phi1=philist[-1], nu2=nulist[-1])
         philist.append(phi_new)
-        print("Added phi: ", np.degrees(phi_new))
 
     if len(nulist)<len(philist):
         #get nu
@@ -112,10 +123,10 @@ for i in range(len(nulist)-1): ##for each fan
 
 
 
-print("philist: ", np.degrees(philist))
-print("nulist: ", np.degrees(nulist))
-print("philist_fan: ", np.degrees(philist_fan))
-print("nulist_fan: ", np.degrees(nulist_fan))
+# print("philist: ", np.degrees(philist))
+# print("nulist: ", np.degrees(nulist))
+# print("philist_fan: ", np.degrees(philist_fan))
+# print("nulist_fan: ", np.degrees(nulist_fan))
 
 a = 5  # starting y coordinate (point at x=0, y=a)
 
@@ -124,27 +135,34 @@ plt.figure(figsize=(6,6))
 plt.axhline(0, color='black', linewidth=1)  # x-axis
 plt.axvline(0, color='gray', linestyle='--')  # y-axis reference
 plt.scatter(0, a, color='red', label=f"Start (0,{a})")
-philist_fan=np.degrees(philist_fan)
-# Loop over angles
-for phi in philist_fan:
-    # Adjust angle so that phi=0 points down
-    theta = np.radians(phi - 90)
 
+# Loop over angles
+for i in range(len(philist_fan)):
+    # Adjust angle so that we substract mach angle
+    mach_angle = np.arcsin(1 / compute_mach(nulist_fan[i], gamma))
+    print("Mach angle (deg): ", np.degrees(mach_angle))
+    print("Phi (deg): ", np.degrees(philist_fan[i]))
+    
+    theta = mach_angle -  philist_fan[i]  # angle in radians
+    print("Theta (deg): ", np.degrees(theta))
     # Parametric line: (x,y) = (0,a) + t*(cosθ, sinθ), with t >= 0
     # We want intersection with y=0:
     #   0 = a + t*sinθ  =>  t = -a/sinθ
     if np.sin(theta) != 0:
-        t = -a / np.sin(theta)
+        t = a / np.sin(theta)
         if t > 0:  # only forward rays
             x_end = t * np.cos(theta)
-            plt.plot([0, x_end], [a, 0], label=f"{phi}°")
+            plt.plot([0, x_end], [a, 0], label=f"{np.degrees(philist_fan[i])   }°")
+        else:
+            print("Ray does not intersect y=0 in the positive direction for Phi =", np.degrees(philist_fan[i]))
     else:
         # Vertical line case (phi=90 or 270 after shift)
         # It will never hit y=0 unless a=0
+        print("Vertical line, no intersection with y=0 at Phi =", np.degrees(philist_fan[i]))
         pass
 
 plt.legend()
-plt.gca().set_aspect('equal', adjustable='box')
+
 plt.xlabel("x")
 plt.ylabel("y")
 plt.title("Lines from (0,a) at given angles")
