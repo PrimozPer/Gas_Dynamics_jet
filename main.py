@@ -18,11 +18,15 @@ def compute_PM_angle(M, gamma):
     return nu
 
 def compute_mach(PM,gamma):
-    for M in np.arange(1.0, 3.0, 0.01):
+    for M in np.arange(1.0, 5.0, 0.01):
         nu=compute_PM_angle(M,gamma)
         if np.isclose(nu, PM, atol=1e-2):
             Mach=M
             break
+        else:
+            Mach=None
+        if debug:
+            print (M)
     if Mach is not None:
         return Mach
     else:
@@ -49,12 +53,35 @@ def do_MOC_plus(phi1=None, nu1=None, phi2=None, nu2=None):
         return phi1
     pass
 
+def do_MOC_minus(phi1=None, nu1=None, phi2=None, nu2=None):
+    '''Method of Characteristics
+    Inputs: three of phi1, nu1, phi2, nu2
+    Outputs: missing input
+    calculates the missing input using the MOC equations
+    '''
+    if phi1 is not None and nu1 is not None and phi2 is not None:
+        nu2 = nu1 + phi1 - phi2
+        return nu2
+    elif phi1 is not None and nu1 is not None and nu2 is not None:
+        phi2 = phi1 + nu1 - nu2
+        return phi2
+    elif phi1 is not None and phi2 is not None and nu2 is not None:
+        nu1 = nu2 + phi2 - phi1
+        return nu1
+    elif nu1 is not None and phi2 is not None and nu2 is not None:
+        phi1 = phi2 + nu2 - nu1
+        return phi1
+    pass
+
 #############################
 
 
 #############################
 #####INITIALIZATION##########
 #############################
+
+
+debug=0
 
 pa=101325 #Pa
 pe=2*pa
@@ -65,7 +92,7 @@ nulist=[]
 ###inside the fan###
 philist_fan = []
 nulist_fan = []
-
+a = 5  # starting y coordinate (point at x=0, y=a)
 #flow total pressure
 p_tot = pe*(1+(gamma-1)/2*Me**2)**(gamma/(gamma-1))
 
@@ -97,38 +124,29 @@ else:
 #get states in uniform region
 while shockwave==False:
     #fill in missing values
-    if len(philist)<len(nulist):
+    
+
+    if len(philist)<len(nulist): #nu is known, phi is unknown (outer edge)
         #get phi
-        phi_new=do_MOC_plus(nu1=nulist[-2], phi1=philist[-1], nu2=nulist[-1])
+        phi_new=do_MOC_plus(nu1=nulist[-2], phi1=philist[-1], nu2=nulist[-1]) #following gamma +
         philist.append(phi_new)
 
-    if len(nulist)<len(philist):
+    if len(nulist)<len(philist):#phi is known, nu is unknown (inner edge)
         #get nu
-        nu_new=do_MOC_plus(nu1=nulist[-2], phi1=philist[-1], nu2=nulist[-1])
+        nu_new=do_MOC_minus(nu1=nulist[-1], phi1=philist[-2], phi2=philist[-1]) #following gamma -
         nulist.append(nu_new)
-    if len(philist)==len(nulist):
+
+    if len(philist)>3:
         shockwave=True
+    elif len(philist)==len(nulist) and philist[-1]!=0:
         
-for i in range(len(nulist)-1): ##for each fan
-
-    dphi=(philist[i]-philist[i+1])/(N_chars-1)
-    #create a temporary instance of in-fan values
-    philist_fan.append(philist[i])
-    nulist_fan.append(nulist[i])
-    for j in range(1,N_chars): ##for each char in the fan
-        phi_new=philist[i]-j*dphi
-        nulist_fan.append(do_MOC_plus(phi1=philist_fan[-1], nu1=nulist_fan[-1], phi2=phi_new))
-        philist_fan.append(phi_new)
-    plot_list=np.arange(len(nulist_fan))
+        philist.append(0) #we are on the outer edge, moving inwards next
+    elif len(philist)==len(nulist) and philist[-1]==0:
+        nulist.append(PM_boundary) #we are on the inner edge, moving outwards next
+    
+    
 
 
-
-# print("philist: ", np.degrees(philist))
-# print("nulist: ", np.degrees(nulist))
-# print("philist_fan: ", np.degrees(philist_fan))
-# print("nulist_fan: ", np.degrees(nulist_fan))
-
-a = 5  # starting y coordinate (point at x=0, y=a)
 
 # Plot setup
 plt.figure(figsize=(6,6))
@@ -136,30 +154,135 @@ plt.axhline(0, color='black', linewidth=1)  # x-axis
 plt.axvline(0, color='gray', linestyle='--')  # y-axis reference
 plt.scatter(0, a, color='red', label=f"Start (0,{a})")
 
-# Loop over angles
-for i in range(len(philist_fan)):
-    # Adjust angle so that we substract mach angle
-    mach_angle = np.arcsin(1 / compute_mach(nulist_fan[i], gamma))
-    print("Mach angle (deg): ", np.degrees(mach_angle))
-    print("Phi (deg): ", np.degrees(philist_fan[i]))
+# Initialize first fan start point(s)
+# anchor point for shear line (starts at nozzle edge)
+shear_anchor = (0, a)
+start_points = [shear_anchor] * N_chars   # nozzle lip
+reflected = [False] * N_chars       # track if ray has bounced
+print("Computing...")
+for i in range(len(nulist) - 1):  # for each fan
     
-    theta = mach_angle -  philist_fan[i]  # angle in radians
-    print("Theta (deg): ", np.degrees(theta))
-    # Parametric line: (x,y) = (0,a) + t*(cosθ, sinθ), with t >= 0
-    # We want intersection with y=0:
-    #   0 = a + t*sinθ  =>  t = -a/sinθ
-    if np.sin(theta) != 0:
-        t = a / np.sin(theta)
-        if t > 0:  # only forward rays
-            x_end = t * np.cos(theta)
-            plt.plot([0, x_end], [a, 0], label=f"{np.degrees(philist_fan[i])   }°")
+    # ## Shear Line ##
+    # length = a * 5  # finite length
+    # x_edge = length * np.cos(philist[i])
+    # y_edge = a + length * np.sin(philist[i])
+    # plt.plot([0, x_edge], [a, y_edge], '--', color='gray')
+
+    
+    # Divide the fan into N_chars characteristics
+    dphi = (philist[i] - philist[i+1]) / (N_chars - 1)
+
+
+    # Create temporary instance of in-fan values
+    philist_fan = [philist[i]]
+    nulist_fan  = [nulist[i]]
+
+    if philist[i+1]>philist[i]:
+        down=False
+        for j in range(1, N_chars):  # build characteristic angles
+            phi_new = philist[i] - j * dphi
+            nulist_fan.append(
+                do_MOC_plus(phi1=philist_fan[-1], nu1=nulist_fan[-1], phi2=phi_new))
+            philist_fan.append(phi_new)
+    elif philist[i+1]<philist[i]:
+        if debug:
+            print("Downwards expansion")
+        down=True
+        for j in range(1, N_chars):  # build characteristic angles
+            phi_new = philist[i] - j * dphi
+            nulist_fan.append(
+                do_MOC_minus(phi1=philist_fan[-1], nu1=nulist_fan[-1], phi2=phi_new))
+            philist_fan.append(phi_new)
+        
+    
+
+    new_start_points = []
+    new_reflected = []
+    
+    if debug:
+        print('Fan_phi', philist_fan)
+        print("Nulist fan", nulist_fan)
+    for j in range(N_chars):
+        x_start, y_start = start_points[j]
+
+        mach_angle = np.arcsin(1 / compute_mach(nulist_fan[j], gamma))
+        if down == True: #computing angle of gamma+ chars
+            theta = mach_angle + philist_fan[j]
         else:
-            print("Ray does not intersect y=0 in the positive direction for Phi =", np.degrees(philist_fan[i]))
-    else:
-        # Vertical line case (phi=90 or 270 after shift)
-        # It will never hit y=0 unless a=0
-        print("Vertical line, no intersection with y=0 at Phi =", np.degrees(philist_fan[i]))
-        pass
+            theta = mach_angle - philist_fan[j]
+
+        # refl = -1 → before bounce, refl = +1 → after bounce
+        refl = 1 if reflected[j] else -1  
+
+        if refl == -1:
+            # -------- DOWNWARD case: intersect y=0 --------
+            if np.sin(theta) != 0:
+                t = y_start / np.sin(theta)
+                if t > 0:
+                    x_end = x_start + t * np.cos(theta)
+                    y_end = y_start - t * np.sin(theta)
+                    plt.plot([x_start, x_end], [y_start, y_end],
+                             label=f"Fan {i}, Char {j}")
+                    new_start_points.append((x_end, y_end))
+                    new_reflected.append(True)  # mark as bounced
+                else:
+                    new_start_points.append((x_start, y_start))
+                    new_reflected.append(reflected[j])
+            else:
+                new_start_points.append((x_start, y_start))
+                new_reflected.append(reflected[j])
+
+        else:
+            # -------- UPWARD case: intersect shear line --------
+            length = a * 5  # finite length
+            x_edge = shear_anchor[0] + length * np.cos(philist_fan[j])
+            y_edge = shear_anchor[1] + length * np.sin(philist_fan[j])
+            plt.plot([shear_anchor[0], x_edge], [shear_anchor[1], y_edge], '--', color='gray')  
+            #get the flow angle for the current region in the fan
+
+            phi_flow = philist_fan[j]
+            
+            
+            if debug:
+                print("Fan number: ", i, "Char number: ", j, "Phi flow (deg): ", np.degrees(phi_flow), 'Theta: ', np.degrees(theta))
+                print("Previous end points:", shear_anchor)
+            #make new line equation for shear line
+            A = np.array([[np.cos(theta), -np.cos(phi_flow)],
+                            [np.sin(theta), -np.sin(phi_flow)]])
+            #start the new shar equation at the ennd of the previous line
+            b = np.array([shear_anchor[0]-x_start,shear_anchor[1]-y_start])
+
+
+            try:
+                t, s = np.linalg.solve(A, b)
+                if t > 0 and s > 0:
+                    x_end = x_start + t * np.cos(theta)
+                    y_end = y_start + t * np.sin(theta)
+                    plt.plot([x_start, x_end], [y_start, y_end], 'r',
+                             label=f"Fan {i}, Char {j} (reflected)")
+                    new_start_points.append((x_end, y_end))
+                    shear_anchor=(x_end,y_end)
+                    new_reflected.append(True)
+                else:
+                    new_start_points.append((x_start, y_start))
+                    new_reflected.append(reflected[j])
+            except np.linalg.LinAlgError:
+                new_start_points.append((x_start, y_start))
+                new_reflected.append(reflected[j])
+
+    # update
+    start_points = new_start_points
+    reflected = new_reflected#reverse to maintain bottom-to-top order
+
+
+# print("philist: ", np.degrees(philist))
+# print("nulist: ", np.degrees(nulist))
+# print("philist_fan: ", np.degrees(philist_fan))
+# print("nulist_fan: ", np.degrees(nulist_fan))
+
+
+
+print('Computed, see graph.')
 
 plt.legend()
 
