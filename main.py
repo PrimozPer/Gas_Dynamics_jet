@@ -73,6 +73,88 @@ def do_MOC_minus(phi1=None, nu1=None, phi2=None, nu2=None):
         return phi1
     pass
 
+
+def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list):
+    if np.sin(theta) != 0:
+                t = y_start / np.sin(theta)
+                if t > 0:
+                    x_end = x_start + t * np.cos(theta)
+                    y_end = y_start - t * np.sin(theta)
+
+                    plot_list.append((x_start, y_start, x_end, y_end, 1, i, j)) #type 1 is characteristic line, type 2 is shear line
+
+                    new_start_points.append((x_end, y_end))
+                    new_reflected.append(True)  # mark as bounced
+                else:
+                    new_start_points.append((x_start, y_start))
+                    new_reflected.append(reflected[j])
+    else:
+        new_start_points.append((x_start, y_start))
+        new_reflected.append(reflected[j])
+    return new_reflected
+
+def compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected, shear_anchor,plot_list):
+    # -------- UPWARD case: intersect shear line --------
+    length = a * 5  # finite length
+    x_edge = shear_anchor[0] + length * np.cos(philist_fan[j])
+    y_edge = shear_anchor[1] + length * np.sin(philist_fan[j])
+
+    plot_list.append((shear_anchor[0], shear_anchor[1], x_edge, y_edge, 2, i, j))  # type 2 is shear line, i and j are indices of fan and char
+
+    #get the flow angle for the current region in the fan
+
+    phi_flow = philist_fan[j]
+    
+    
+    if debug:
+        print("Fan number: ", i, "Char number: ", j, "Phi flow (deg): ", np.degrees(phi_flow), 'Theta: ', np.degrees(theta))
+        print("Previous end points:", shear_anchor)
+    #make new line equation for shear line
+    A = np.array([[np.cos(theta), -np.cos(phi_flow)],
+                    [np.sin(theta), -np.sin(phi_flow)]])
+    #start the new shar equation at the ennd of the previous line
+    b = np.array([shear_anchor[0]-x_start,shear_anchor[1]-y_start])
+
+
+    try:
+        t, s = np.linalg.solve(A, b)
+        if t > 0 and s > 0:
+            x_end = x_start + t * np.cos(theta)
+            y_end = y_start + t * np.sin(theta)
+
+
+            plot_list.append((x_start, y_start, x_end, y_end, 1,i,j)) #type 1 is characteristic line, type 2 is shear line
+
+            new_start_points.append((x_end, y_end))
+            shear_anchor=(x_end,y_end)
+            new_reflected.append(True)
+        else:
+            new_start_points.append((x_start, y_start))
+            new_reflected.append(reflected[j])
+    except np.linalg.LinAlgError:
+        new_start_points.append((x_start, y_start))
+        new_reflected.append(reflected[j])
+    return shear_anchor
+
+def plotting_routine(plot_list):
+    '''Plotting routine for the characteristics and shear line with the style depending on the type of line'''
+    for line in plot_list:
+        x_start, y_start, x_end, y_end, type, fan, char = line
+
+        #type 1 is characteristic line, type 2 is shear line
+        if type == 1:
+            plt.plot([x_start, x_end], [y_start, y_end], '-', color='blue')
+        elif type == 2:
+            plt.plot([x_start, x_end], [y_start, y_end], '--', color='gray')
+            
+
+    plt.legend()
+    plt.xlabel("X-axis")
+    plt.ylabel("Y-axis")
+    plt.title("Characteristics and Shear Lines")
+    plt.grid()
+    plt.show()
+
 #############################
 
 
@@ -106,7 +188,7 @@ nulist.append(PM_outlet)
 nulist.append(PM_boundary)
 shockwave=False
 
-
+plot_list=[]
 
 ######get the user input#######
 
@@ -136,7 +218,7 @@ while shockwave==False:
         nu_new=do_MOC_minus(nu1=nulist[-1], phi1=philist[-2], phi2=philist[-1]) #following gamma -
         nulist.append(nu_new)
 
-    if len(philist)>3:
+    if len(philist)>2:
         shockwave=True
     elif len(philist)==len(nulist) and philist[-1]!=0:
         
@@ -148,11 +230,6 @@ while shockwave==False:
 
 
 
-# Plot setup
-plt.figure(figsize=(6,6))
-plt.axhline(0, color='black', linewidth=1)  # x-axis
-plt.axvline(0, color='gray', linestyle='--')  # y-axis reference
-plt.scatter(0, a, color='red', label=f"Start (0,{a})")
 
 # Initialize first fan start point(s)
 # anchor point for shear line (starts at nozzle edge)
@@ -216,59 +293,10 @@ for i in range(len(nulist) - 1):  # for each fan
 
         if refl == -1:
             # -------- DOWNWARD case: intersect y=0 --------
-            if np.sin(theta) != 0:
-                t = y_start / np.sin(theta)
-                if t > 0:
-                    x_end = x_start + t * np.cos(theta)
-                    y_end = y_start - t * np.sin(theta)
-                    plt.plot([x_start, x_end], [y_start, y_end],
-                             label=f"Fan {i}, Char {j}")
-                    new_start_points.append((x_end, y_end))
-                    new_reflected.append(True)  # mark as bounced
-                else:
-                    new_start_points.append((x_start, y_start))
-                    new_reflected.append(reflected[j])
-            else:
-                new_start_points.append((x_start, y_start))
-                new_reflected.append(reflected[j])
+            compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list)
 
         else:
-            # -------- UPWARD case: intersect shear line --------
-            length = a * 5  # finite length
-            x_edge = shear_anchor[0] + length * np.cos(philist_fan[j])
-            y_edge = shear_anchor[1] + length * np.sin(philist_fan[j])
-            plt.plot([shear_anchor[0], x_edge], [shear_anchor[1], y_edge], '--', color='gray')  
-            #get the flow angle for the current region in the fan
-
-            phi_flow = philist_fan[j]
-            
-            
-            if debug:
-                print("Fan number: ", i, "Char number: ", j, "Phi flow (deg): ", np.degrees(phi_flow), 'Theta: ', np.degrees(theta))
-                print("Previous end points:", shear_anchor)
-            #make new line equation for shear line
-            A = np.array([[np.cos(theta), -np.cos(phi_flow)],
-                            [np.sin(theta), -np.sin(phi_flow)]])
-            #start the new shar equation at the ennd of the previous line
-            b = np.array([shear_anchor[0]-x_start,shear_anchor[1]-y_start])
-
-
-            try:
-                t, s = np.linalg.solve(A, b)
-                if t > 0 and s > 0:
-                    x_end = x_start + t * np.cos(theta)
-                    y_end = y_start + t * np.sin(theta)
-                    plt.plot([x_start, x_end], [y_start, y_end], 'r',
-                             label=f"Fan {i}, Char {j} (reflected)")
-                    new_start_points.append((x_end, y_end))
-                    shear_anchor=(x_end,y_end)
-                    new_reflected.append(True)
-                else:
-                    new_start_points.append((x_start, y_start))
-                    new_reflected.append(reflected[j])
-            except np.linalg.LinAlgError:
-                new_start_points.append((x_start, y_start))
-                new_reflected.append(reflected[j])
+            shear_anchor=compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected, shear_anchor, plot_list)
 
     # update
     start_points = new_start_points
@@ -279,19 +307,16 @@ for i in range(len(nulist) - 1):  # for each fan
 # print("nulist: ", np.degrees(nulist))
 # print("philist_fan: ", np.degrees(philist_fan))
 # print("nulist_fan: ", np.degrees(nulist_fan))
+plot_list=np.array(plot_list)
 
-
+if debug:
+    print("_______________________")
+    print("Plotting list storing all lines to be plotted (x_start, y_start, x_end, y_end, type (1 for char 2 for shear), fan, char):")
+    print("Plot list shape: ", plot_list.shape)
+    print(plot_list)
 
 print('Computed, see graph.')
-
-#plt.legend()
-
-plt.xlabel("x")
-plt.ylabel("y")
-plt.title("Lines from (0,a) at given angles")
-plt.grid(True)
-plt.show()
-
+plotting_routine(plot_list)
 
 #Idea for tomorrow: Instead of plotting everything for a temp list, store in a dataframe or matrix and plot at the end.
 #This way I can write further reflections and locate them on the previous characteristic lines and then modify the
