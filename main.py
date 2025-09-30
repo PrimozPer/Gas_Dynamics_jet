@@ -303,10 +303,6 @@ for i in range(len(nulist) - 1):  # for each fan
     reflected = new_reflected#reverse to maintain bottom-to-top order
 
 
-# print("philist: ", np.degrees(philist))
-# print("nulist: ", np.degrees(nulist))
-# print("philist_fan: ", np.degrees(philist_fan))
-# print("nulist_fan: ", np.degrees(nulist_fan))
 plot_list=np.array(plot_list)
 
 if debug:
@@ -318,6 +314,3 @@ if debug:
 print('Computed, see graph.')
 plotting_routine(plot_list)
 
-#Idea for tomorrow: Instead of plotting everything for a temp list, store in a dataframe or matrix and plot at the end.
-#This way I can write further reflections and locate them on the previous characteristic lines and then modify the
-#previous line bounds to be cut off at the intersection point.
