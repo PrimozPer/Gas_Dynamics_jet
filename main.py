@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 def get_user_in():
     N_chars=input("Insert deisced number of characteristics: ")
     #test if N_chars is an integer
@@ -7,7 +8,8 @@ def get_user_in():
         N_chars=int(N_chars)
     except ValueError:
         print("Invalid input. Please enter an integer.")
-        return None
+        #try again
+        return get_user_in()
     return N_chars
 
 def compute_PM_angle(M, gamma):
@@ -17,20 +19,23 @@ def compute_PM_angle(M, gamma):
     
     return nu
 
-def compute_mach(PM,gamma):
-    for M in np.arange(1.0, 5.0, 0.01):
-        nu=compute_PM_angle(M,gamma)
-        if np.isclose(nu, PM, atol=1e-2):
-            Mach=M
-            break
-        else:
-            Mach=None
-        if debug:
-            print (M)
-    if Mach is not None:
-        return Mach
-    else:
-        raise ValueError("No Mach number found for given Prandtl-Meyer angle.")
+def compute_mach(PM, gamma, tol=1e-6, max_iter=100):
+    def f(M):
+        return compute_PM_angle(M, gamma) - PM
+    
+    def df(M):
+        # derivative of Prandtl-Meyer angle wrt M
+        return np.sqrt(M**2 - 1) / (1 + 0.5*(gamma-1)*M**2) / M
+    
+    M = 2.0  # initial guess
+    for _ in range(max_iter):
+        M_new = M - f(M)/df(M)
+        if abs(M_new - M) < tol:
+            return M_new
+        M = M_new
+    
+    raise ValueError("Did not converge")
+
     
 
 def do_MOC_plus(phi1=None, nu1=None, phi2=None, nu2=None):
@@ -73,6 +78,13 @@ def do_MOC_minus(phi1=None, nu1=None, phi2=None, nu2=None):
         return phi1
     pass
 
+def compute_mach_angle(nulist_fan, j, gamma, down):
+    mach_angle = np.arcsin(1 / compute_mach(nulist_fan[j], gamma))
+    if down == True: #computing angle of gamma+ chars
+        theta = mach_angle + philist_fan[j]
+    else:
+        theta = mach_angle - philist_fan[j]
+    return theta
 
 def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list):
     if np.sin(theta) != 0:
@@ -81,7 +93,7 @@ def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulis
                     x_end = x_start + t * np.cos(theta)
                     y_end = y_start - t * np.sin(theta)
 
-                    plot_list.append((x_start, y_start, x_end, y_end, 1, i, j)) #type 1 is characteristic line, type 2 is shear line
+                    plot_list.append((theta,x_start, y_start, x_end, y_end, 1, i, j)) #type 1 is characteristic line, type 2 is shear line
 
                     new_start_points.append((x_end, y_end))
                     new_reflected.append(True)  # mark as bounced
@@ -99,7 +111,7 @@ def compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist
     x_edge = shear_anchor[0] + length * np.cos(philist_fan[j])
     y_edge = shear_anchor[1] + length * np.sin(philist_fan[j])
 
-    plot_list.append((shear_anchor[0], shear_anchor[1], x_edge, y_edge, 2, i, j))  # type 2 is shear line, i and j are indices of fan and char
+    plot_list.append((theta,shear_anchor[0], shear_anchor[1], x_edge, y_edge, 2, i, j))  # type 2 is shear line, i and j are indices of fan and char
 
     #get the flow angle for the current region in the fan
 
@@ -123,7 +135,7 @@ def compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist
             y_end = y_start + t * np.sin(theta)
 
 
-            plot_list.append((x_start, y_start, x_end, y_end, 1,i,j)) #type 1 is characteristic line, type 2 is shear line
+            plot_list.append((theta,x_start, y_start, x_end, y_end, 1,i,j)) #type 1 is characteristic line, type 2 is shear line
 
             new_start_points.append((x_end, y_end))
             shear_anchor=(x_end,y_end)
@@ -139,7 +151,7 @@ def compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist
 def plotting_routine(plot_list):
     '''Plotting routine for the characteristics and shear line with the style depending on the type of line'''
     for line in plot_list:
-        x_start, y_start, x_end, y_end, type, fan, char = line
+        theta, x_start, y_start, x_end, y_end, type, fan, char = line
 
         #type 1 is characteristic line, type 2 is shear line
         if type == 1:
@@ -202,6 +214,7 @@ else:
 #############################
 #####MAIN LOOP###############
 #############################
+start_time = time.time()
 print("Computing...")
 #get states in uniform region
 while shockwave==False:
@@ -271,8 +284,6 @@ for i in range(len(nulist) - 1):  # for each fan
                 do_MOC_minus(phi1=philist_fan[-1], nu1=nulist_fan[-1], phi2=phi_new))
             philist_fan.append(phi_new)
         
-    
-
     new_start_points = []
     new_reflected = []
     
@@ -282,11 +293,7 @@ for i in range(len(nulist) - 1):  # for each fan
     for j in range(N_chars):
         x_start, y_start = start_points[j]
 
-        mach_angle = np.arcsin(1 / compute_mach(nulist_fan[j], gamma))
-        if down == True: #computing angle of gamma+ chars
-            theta = mach_angle + philist_fan[j]
-        else:
-            theta = mach_angle - philist_fan[j]
+        theta = compute_mach_angle(nulist_fan, j, gamma, down)  # angle of characteristic line
 
         # refl = -1 → before bounce, refl = +1 → after bounce
         refl = 1 if reflected[j] else -1  
@@ -307,10 +314,12 @@ plot_list=np.array(plot_list)
 
 if debug:
     print("_______________________")
-    print("Plotting list storing all lines to be plotted (x_start, y_start, x_end, y_end, type (1 for char 2 for shear), fan, char):")
+    print("Plotting list storing all lines to be plotted (theta, x_start, y_start, x_end, y_end, type (1 for char 2 for shear), fan, char):")
     print("Plot list shape: ", plot_list.shape)
     print(plot_list)
 
 print('Computed, see graph.')
+end_time = time.time()
+print(f"Execution time: {end_time - start_time} seconds")
 plotting_routine(plot_list)
 
