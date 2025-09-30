@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+#timing tool
+import time
 def get_user_in():
     N_chars=input("Insert deisced number of characteristics: ")
     #test if N_chars is an integer
@@ -7,7 +9,8 @@ def get_user_in():
         N_chars=int(N_chars)
     except ValueError:
         print("Invalid input. Please enter an integer.")
-        return None
+        #try again
+        return get_user_in()
     return N_chars
 
 def compute_PM_angle(M, gamma):
@@ -17,21 +20,23 @@ def compute_PM_angle(M, gamma):
     
     return nu
 
-def compute_mach(PM,gamma):
-    for M in np.arange(1.0, 5.0, 0.01):
-        nu=compute_PM_angle(M,gamma)
-        if np.isclose(nu, PM, atol=1e-2):
-            Mach=M
-            break
-        else:
-            Mach=None
-        if debug:
-            print (M)
-    if Mach is not None:
-        return Mach
-    else:
-        raise ValueError("No Mach number found for given Prandtl-Meyer angle.")
+def compute_mach(PM, gamma, tol=1e-6, max_iter=100):
+    def f(M):
+        return compute_PM_angle(M, gamma) - PM
     
+    def df(M):
+        # derivative of Prandtl-Meyer angle wrt M
+        return np.sqrt(M**2 - 1) / (1 + 0.5*(gamma-1)*M**2) / M
+    
+    M = 2.0  # initial guess
+    for _ in range(max_iter):
+        M_new = M - f(M)/df(M)
+        if abs(M_new - M) < tol:
+            return M_new
+        M = M_new
+    
+    raise ValueError("Did not converge")
+
 
 def do_MOC_plus(phi1=None, nu1=None, phi2=None, nu2=None):
     '''Method of Characteristics
@@ -202,6 +207,9 @@ else:
 #############################
 #####MAIN LOOP###############
 #############################
+#start timing
+start_time = time.time()
+
 print("Computing...")
 #get states in uniform region
 while shockwave==False:
@@ -296,7 +304,10 @@ for i in range(len(nulist) - 1):  # for each fan
             compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list)
 
         else:
+            # -------- UPWARD case: intersect shear line --------
             shear_anchor=compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected, shear_anchor, plot_list)
+        #for reflection from the shear line, the new start point also depends on the next, downwards facing characteristic and essentially, the flow expands downwards again, making a new phi
+        
 
     # update
     start_points = new_start_points
@@ -312,5 +323,9 @@ if debug:
     print(plot_list)
 
 print('Computed, see graph.')
+end_time = time.time()
 plotting_routine(plot_list)
+#end timing
+
+print(f"Execution time: {end_time - start_time:.4f} seconds")
 
