@@ -339,19 +339,15 @@ for i in range(len(nulist) - 1):  # for each fan
         x_start, y_start = start_points[j]
 
         theta = compute_mach_angle(nulist_fan, j, gamma, down)  # angle of characteristic line
-
-        # refl = -1 → before bounce, refl = +1 → after bounce
-        refl = 1 if reflected[j] else -1  
-
-        if refl == -1:
-            # -------- DOWNWARD case: intersect y=0 --------
-            compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list)
-
-        else:
-            # -------- UPWARD case: intersect shear line --------
-            shear_anchor=compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected, shear_anchor, plot_list)
-        #for reflection from the shear line, the new start point also depends on the next, downwards facing characteristic and essentially, the flow expands downwards again, making a new phi
         
+        #consider the 1st fan seperately since it originates from one point
+        if i == 0:
+            if debug:
+                print("First fan, j=", j)
+            compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list)        
+        #instead of computing each up and down case, compute an up and down case and do each characterstic across both cases
+
+
 
     # update
     start_points = new_start_points
