@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import pandas as pd
 def get_user_in():
     N_chars=input("Insert deisced number of characteristics: ")
     #test if N_chars is an integer
@@ -93,8 +94,19 @@ def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulis
                     x_end = x_start + t * np.cos(theta)
                     y_end = y_start - t * np.sin(theta)
 
-                    plot_list.append((theta,x_start, y_start, x_end, y_end, 1, i, j)) #type 1 is characteristic line, type 2 is shear line
-
+                    entry = {
+                        "theta": theta,
+                        "x0": x_start, "y0": y_start,
+                        "x1": x_end, "y1": y_end,
+                        "type": 1,
+                        "fan": i,
+                        "char": j,
+                        "phi": philist_fan[j],
+                        "nu": nulist_fan[j],
+                        "pair_key": j,
+                        "merged": False
+                    }
+                    plot_list.append(entry)
                     new_start_points.append((x_end, y_end))
                     new_reflected.append(True)  # mark as bounced
                 else:
@@ -111,8 +123,19 @@ def compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist
     x_edge = shear_anchor[0] + length * np.cos(philist_fan[j])
     y_edge = shear_anchor[1] + length * np.sin(philist_fan[j])
 
-    plot_list.append((theta,shear_anchor[0], shear_anchor[1], x_edge, y_edge, 2, i, j))  # type 2 is shear line, i and j are indices of fan and char
-
+    shear_entry = {
+        "theta": philist_fan[j],  # shear follows phi, not theta
+        "x0": shear_anchor[0], "y0": shear_anchor[1],
+        "x1": x_edge, "y1": y_edge,
+        "type": 2,
+        "fan": i,
+        "char": j,
+        "phi": philist_fan[j],
+        "nu": nulist_fan[j],
+        "pair_key": j,
+        "merged": False
+    }
+    plot_list.append(shear_entry)
     #get the flow angle for the current region in the fan
 
     phi_flow = philist_fan[j]
@@ -135,8 +158,19 @@ def compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist
             y_end = y_start + t * np.sin(theta)
 
 
-            plot_list.append((theta,x_start, y_start, x_end, y_end, 1,i,j)) #type 1 is characteristic line, type 2 is shear line
-
+            entry = {
+                "theta": theta,
+                "x0": x_start, "y0": y_start,
+                "x1": x_end, "y1": y_end,
+                "type": 1,
+                "fan": i,
+                "char": j,
+                "phi": philist_fan[j],
+                "nu": nulist_fan[j],
+                "pair_key": j,
+                "merged": False
+            }
+            plot_list.append(entry)
             new_start_points.append((x_end, y_end))
             shear_anchor=(x_end,y_end)
             new_reflected.append(True)
@@ -151,7 +185,18 @@ def compute_fan_gamma_plus(theta, x_start, y_start, N_chars, philist_fan, nulist
 def plotting_routine(plot_list):
     '''Plotting routine for the characteristics and shear line with the style depending on the type of line'''
     for line in plot_list:
-        theta, x_start, y_start, x_end, y_end, type, fan, char = line
+        theta = line["theta"]
+        x_start = line["x0"]    
+        y_start = line["y0"]
+        x_end = line["x1"]
+        y_end = line["y1"]
+        type = line["type"]
+        fan = line["fan"]
+        char = line["char"]
+        phi = line["phi"]
+        nu = line["nu"]
+        pair_key = line["pair_key"]
+        merged = line["merged"]
 
         #type 1 is characteristic line, type 2 is shear line
         if type == 1:
@@ -175,7 +220,7 @@ def plotting_routine(plot_list):
 #############################
 
 
-debug=0
+debug=1
 
 pa=101325 #Pa
 pe=2*pa
@@ -313,13 +358,19 @@ for i in range(len(nulist) - 1):  # for each fan
     reflected = new_reflected#reverse to maintain bottom-to-top order
 
 
-plot_list=np.array(plot_list)
-
 if debug:
+    plot_list_df = pd.DataFrame(plot_list)
     print("_______________________")
     print("Plotting list storing all lines to be plotted (theta, x_start, y_start, x_end, y_end, type (1 for char 2 for shear), fan, char):")
-    print("Plot list shape: ", plot_list.shape)
-    print(plot_list)
+    print(plot_list_df)
+    print("Do you wish to save it as a csv? (y/n)")
+    save_csv = input().lower()
+    if save_csv == 'y':
+        plot_list_df.to_csv('plot_list.csv', index=False)
+        print("Saved as plot_list.csv")
+    else:
+        print("Not saved.")
+    
 
 print('Computed, see graph.')
 end_time = time.time()
