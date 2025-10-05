@@ -194,10 +194,10 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta_now):
         #shear anchor is the end of the previous char in the current fan
         shear_anchor = get_entry(plot_list, i, j-1)
         shear_anchor = (shear_anchor['x1'], shear_anchor['y1'])
-        up_line = get_entry(plot_list, i, j)
+        up_line = get_entry(plot_list, i, j-1)
         #the shear is now the phi after the previous char (downwards) in the current fan
         down_line= get_entry(plot_list, i+1, j-1)
-        shear_line_angle = 0.5*(up_line['phi']+down_line['phi'])
+        shear_line_angle = 0.5*(up_line['phi']+down_line['phi']-up_line['nu']+down_line['nu'])
 
         if debug:
             print("shear anchor for char ", j, " in fan:", shear_anchor)
@@ -243,6 +243,23 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta_now):
         else:
             if debug:
                 print("No valid intersection found for fan ", i, " char ", j, "t or s < 0")
+            x_end = x_start + t * np.cos(theta)
+            y_end = y_start + t * np.sin(theta)
+            #update the previously emptu upwards entry in plot list
+            entry = get_entry(plot_list, i, j)
+            entry["theta"] = theta
+            entry["x0"] = x_start
+            entry["y0"] = y_start
+            entry["x1"] = x_end
+            entry["y1"] = y_end
+            entry["type"] = 1
+            entry["fan"] = i
+            entry["char"] = j
+            entry["phi"] = entry["phi"] #dont change
+            entry["nu"] = entry["nu"] #dont change
+            entry["pair_key"] = j
+            entry["merged"] = False
+            plot_list.append(entry)
     except np.linalg.LinAlgError:
         if debug:
             print("No valid intersection found for fan ", i, " char ", j)
@@ -320,7 +337,7 @@ def plotting_routine(plot_list):
         elif type == 2:
             plt.plot([x_start, x_end], [y_start, y_end], '--', color='gray')
             
-
+    plt.axis('equal')
     plt.legend()
     plt.xlabel("X-axis")
     plt.ylabel("Y-axis")
@@ -336,7 +353,7 @@ def plotting_routine(plot_list):
 #############################
 
 
-debug=1
+debug=0
 
 pa=101325 #Pa
 pe=2*pa
@@ -392,7 +409,7 @@ while shockwave==False:
         nu_new=do_MOC_minus(nu1=nulist[-1], phi1=philist[-2], phi2=philist[-1]) #following gamma -
         nulist.append(nu_new)
 
-    if len(philist)>3:
+    if len(philist)>5:
         shockwave=True
     elif len(philist)==len(nulist) and philist[-1]!=0:
         
