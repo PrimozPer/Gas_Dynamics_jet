@@ -20,22 +20,32 @@ def compute_PM_angle(M, gamma):
     
     return nu
 
-def compute_mach(PM, gamma, tol=1e-6, max_iter=100):
+def compute_mach(PM, gamma, tol=1e-8, max_iter=100):
+    """Find M such that compute_PM_angle(M,gamma) == PM.
+    PM must be in radians.
+    Robust Newton with numerical derivative.
+    """
     def f(M):
         return compute_PM_angle(M, gamma) - PM
-    
-    def df(M):
-        # derivative of Prandtl-Meyer angle wrt M
-        return np.sqrt(M**2 - 1) / (1 + 0.5*(gamma-1)*M**2) / M
-    
-    M = 2.0  # initial guess
+
+    # initial guess: if PM small use 1.2, otherwise 2.0
+    M = 2.0 if PM > 0.2 else 1.2
     for _ in range(max_iter):
-        M_new = M - f(M)/df(M)
+        # ensure M > 1
+        if M <= 1.0:
+            M = 1.0001
+        # numerical derivative (centered)
+        eps = 1e-6 * max(1.0, M)
+        f_plus = f(M + eps)
+        f_minus = f(M - eps)
+        df_num = (f_plus - f_minus) / (2 * eps)
+        if df_num == 0:
+            raise ValueError("Derivative zero in Newton iteration")
+        M_new = M - f(M) / df_num
         if abs(M_new - M) < tol:
-            return M_new
+            return float(M_new)
         M = M_new
-    
-    raise ValueError("Did not converge")
+    raise ValueError("compute_mach: did not converge")
 
     
 
@@ -79,7 +89,7 @@ def do_MOC_minus(phi1=None, nu1=None, phi2=None, nu2=None):
         return phi1
     pass
 
-def compute_mach_angle(nulist_fan, j, gamma, down):
+def compute_mach_angle(nulist_fan, philist_fan, j, gamma, down):
     mach_angle = np.arcsin(1 / compute_mach(nulist_fan[j], gamma))
     if down == True: #computing angle of gamma+ chars
         theta = mach_angle + philist_fan[j]
@@ -91,6 +101,10 @@ def get_entry(plot_list, fan, char):
         if entry["fan"] == fan and entry["char"] == char:
             return entry
     raise KeyError(f"No entry found with fan={fan}, char={char}")
+
+
+
+
 
 def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list):
     if np.sin(theta) != 0:
@@ -123,9 +137,9 @@ def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulis
     return new_reflected
 
 
-def store_upwards_char_info(i,j,philist_fan,nulist_fan,plot_list):
+def store_upwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list):
     entry = {
-        "theta": None,  # to be filled later
+        "theta": theta,  # to be filled later
         "x0": None, "y0": None,
         "x1": None, "y1": None,
         "type": 1,
@@ -139,7 +153,23 @@ def store_upwards_char_info(i,j,philist_fan,nulist_fan,plot_list):
     plot_list.append(entry)
     return plot_list
 
-def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor):
+def store_downwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list):
+    entry = {
+        "theta": theta,  # to be filled later
+        "x0": None, "y0": None,
+        "x1": None, "y1": None,
+        "type": 1,
+        "fan": i,
+        "char": j,
+        "phi": philist_fan[j],
+        "nu": nulist_fan[j],
+        "pair_key": j,
+        "merged": False
+    }
+    plot_list.append(entry)
+    return plot_list
+
+def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta_now):
     #get first shear line from phi and last start point
     #the shear anchor is the start of the last characteristic treated 
     
@@ -156,8 +186,10 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor):
         
         #get the flow angle for the current region in the fan
         shear_line_angle = region['phi']
+        nu_down_line=[region['nu']]
         if debug:
             print("shear angle for 1st char in fan:", shear_line_angle)
+            print('previous line: ' , region)
     else:
         #shear anchor is the end of the previous char in the current fan
         shear_anchor = get_entry(plot_list, i, j-1)
@@ -165,7 +197,8 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor):
         up_line = get_entry(plot_list, i, j)
         #the shear is now the phi after the previous char (downwards) in the current fan
         down_line= get_entry(plot_list, i+1, j-1)
-        shear_line_angle = 0.5*((up_line['nu'] + up_line['phi'])-(down_line['nu']+down_line['phi']))
+        shear_line_angle = 0.5*(up_line['phi']+down_line['phi'])
+
         if debug:
             print("shear anchor for char ", j, " in fan:", shear_anchor)
     #get the endpoint of the downward char in the previous fan
@@ -176,10 +209,8 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor):
     
     
     
-    #the nu of the upwards fan is required to compute the mach angle
-    #put in list to match the function input
-    nu = [get_entry(plot_list, i, j)['nu']]
-    theta = compute_mach_angle(nu, 0, gamma, down=False)  # angle of characteristic line
+
+    theta = get_entry(plot_list, i, j)['theta']
     if debug:
         print("Fan number: ", i, "Char number: ", j, "Shear angle (deg): ", np.degrees(shear_line_angle), 'Theta: ', np.degrees(theta))
         print("Previous end points:", shear_anchor)
@@ -188,6 +219,7 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor):
                     [np.sin(theta), -np.sin(shear_line_angle)]])
     #start the new shear equation at the end of the previous line
     b = np.array([shear_anchor[0]-x_start,shear_anchor[1]-y_start])
+
     try:
         t, s = np.linalg.solve(A, b)
         if t > 0 and s > 0:
@@ -210,7 +242,7 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor):
             plot_list.append(entry)
         else:
             if debug:
-                print("No valid intersection found for fan ", i, " char ", j)
+                print("No valid intersection found for fan ", i, " char ", j, "t or s < 0")
     except np.linalg.LinAlgError:
         if debug:
             print("No valid intersection found for fan ", i, " char ", j)
@@ -219,7 +251,7 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor):
     #the new start point is the end of the previous upward char
     x_start = x_end
     y_start = y_end
-    theta = compute_mach_angle(nulist_fan, j, gamma, down=True)  # angle of characteristic line
+    theta = 0.5*(theta_now + get_entry(plot_list, i, j)['theta'])+shear_line_angle*0.5
     if debug:
         print("Fan number: ", i+1, "Char number: ", j, "Shear angle (deg): ", np.degrees(shear_line_angle), 'Theta: ', np.degrees(theta))
         print("Previous end points:", shear_anchor)
@@ -421,8 +453,9 @@ for i in range(len(nulist) - 1):  # for each fan
         print("Nulist fan", nulist_fan)
     for j in range(N_chars):
         x_start, y_start = [0, a]  # reset start point for each char
-        theta = compute_mach_angle(nulist_fan, j, gamma, down)  # angle of characteristic line
-        print('CURRENT FAN:', i, 'CHAR:', j, 'THETA (deg):', np.degrees(theta), 'PHI (deg):', np.degrees(philist_fan[j]), 'NU (deg):', np.degrees(nulist_fan[j]))
+        theta = compute_mach_angle(nulist_fan, philist_fan, j, gamma, down)  # angle of characteristic line
+        if debug:
+            print('CURRENT FAN:', i, 'CHAR:', j, 'THETA (deg):', np.degrees(theta), 'PHI (deg):', np.degrees(philist_fan[j]), 'NU (deg):', np.degrees(nulist_fan[j]))
         #consider the 1st fan seperately since it originates from one point
         if i == 0:
             if debug:
@@ -432,11 +465,11 @@ for i in range(len(nulist) - 1):  # for each fan
         #for upward case, store the flow phi and pm angle for each char
         elif i%2==1: #odd fan, upward case
             #store current characterisitc flow properties, dont do any geometry with start and end points yet
-            plot_list=store_upwards_char_info(i,j,philist_fan,nulist_fan,plot_list)
+            plot_list=store_upwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list)
             if debug:
                 print("Upward case, j=", j)
         elif i%2==0: #even fan, downward case
-            compute_reflection_from_shear_line(i,j,plot_list,shear_anchor)
+            compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta)
             if debug:
                 print("Downward case, j=", j)
         else:
