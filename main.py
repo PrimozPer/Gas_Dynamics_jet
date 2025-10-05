@@ -251,7 +251,7 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta_now):
     #the new start point is the end of the previous upward char
     x_start = x_end
     y_start = y_end
-    theta = 0.5*(theta_now + get_entry(plot_list, i, j)['theta'])+shear_line_angle*0.5
+    theta = theta_now
     if debug:
         print("Fan number: ", i+1, "Char number: ", j, "Shear angle (deg): ", np.degrees(shear_line_angle), 'Theta: ', np.degrees(theta))
         print("Previous end points:", shear_anchor)
@@ -392,7 +392,7 @@ while shockwave==False:
         nu_new=do_MOC_minus(nu1=nulist[-1], phi1=philist[-2], phi2=philist[-1]) #following gamma -
         nulist.append(nu_new)
 
-    if len(philist)>5:
+    if len(philist)>3:
         shockwave=True
     elif len(philist)==len(nulist) and philist[-1]!=0:
         
@@ -428,14 +428,14 @@ for i in range(len(nulist) - 1):  # for each fan
     philist_fan = [philist[i]]
     nulist_fan  = [nulist[i]]
 
-    if philist[i+1]>philist[i]:
+    if i%2==0:
         down=False
         for j in range(1, N_chars):  # build characteristic angles
             phi_new = philist[i] - j * dphi
             nulist_fan.append(
                 do_MOC_plus(phi1=philist_fan[-1], nu1=nulist_fan[-1], phi2=phi_new))
             philist_fan.append(phi_new)
-    elif philist[i+1]<philist[i]:
+    elif i%2==1:
         if debug:
             print("Downwards expansion")
         down=True
