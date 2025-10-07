@@ -96,6 +96,8 @@ def compute_mach_angle(nulist_fan, philist_fan, j, gamma, down):
     else:
         theta = mach_angle - philist_fan[j]
     return theta
+
+
 def get_entry(plot_list, fan, char):
     for entry in plot_list:
         if entry["fan"] == fan and entry["char"] == char:
@@ -103,8 +105,30 @@ def get_entry(plot_list, fan, char):
     raise KeyError(f"No entry found with fan={fan}, char={char}")
 
 
+def get_max_entry(plot_list, fan, char):
+    hold_list=[]
+    for entry in plot_list:
+        if entry["fan"] == fan and entry["char"] == char:
+            hold_list.append(entry)
+            
+    if hold_list==[]:
+        raise KeyError(f"No entry found with fan={fan}, char={char}")
+    print(max(hold_list, key=lambda x: x["pair_key"]))
+    return max(hold_list, key=lambda x: x["pair_key"])
+def get_min_entry(plot_list, fan, char):
+    hold_list=[]
+    for entry in plot_list:
+        if entry["fan"] == fan and entry["char"] == char:
+            hold_list.append(entry)
+            
+    if hold_list==[]:
+        raise KeyError(f"No entry found with fan={fan}, char={char}")
+    return min(hold_list, key=lambda x: x["pair_key"])
+    
+    
 
-def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list):
+def compute_fan_gamma_minus(theta, x_start, y_start,  philist_fan, nulist_fan, reflected,plot_list):
+
     if np.sin(theta) != 0:
                 t = y_start / np.sin(theta)
                 if t > 0:
@@ -120,7 +144,7 @@ def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulis
                         "char": j,
                         "phi": philist_fan[j],
                         "nu": nulist_fan[j],
-                        "pair_key": j,
+                        "pair_key": 0,
                         "merged": False
                     }
                     plot_list.append(entry)
@@ -132,8 +156,7 @@ def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulis
     else:
         new_start_points.append((x_start, y_start))
         new_reflected.append(reflected[j])
-    return new_reflected
-
+    return plot_list
 
 def store_upwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,xstart=None,ystart=None):
     entry = {
@@ -145,7 +168,7 @@ def store_upwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,xstar
         "char": j,
         "phi": philist_fan[j],
         "nu": nulist_fan[j],
-        "pair_key": j,
+        "pair_key": 0,
         "merged": False
     }
     plot_list.append(entry)
@@ -161,21 +184,171 @@ def store_downwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,xst
         "char": j,
         "phi": philist_fan[j],
         "nu": nulist_fan[j],
-        "pair_key": j,
+        "pair_key": 0,
         "merged": False
     }
     plot_list.append(entry)
     return plot_list
+def overwrite_entry(plot_list,fan,char,xend,yend):
+    entry_kp1_0 = get_max_entry(plot_list, fan, char)
+    entry_kp1_0["x1"] = xend
+    entry_kp1_0["y1"] = yend
+    # Overwrite if entry exists, otherwise append
+    found = False
+    for idx, entry in enumerate(plot_list):
+        if entry is entry_kp1_0:
+            plot_list[idx] = entry_kp1_0
+            found = True
+            break
+    if not found:
+        plot_list.append(entry_kp1_0)
+    return plot_list
 
-
-def compute_reflection_from_middle(plot_list,fan):
+def compute_reflection_from_middle(plot_list,k):
     #fan is the inbound fan number (starting with 0 )
-    
-    
+    for j in range(N_chars):
+        print("new J")
+        previous_char=get_max_entry(plot_list,k,j)
+        theta = previous_char["theta"]
+        x_start = previous_char["x0"]
+        y_start = previous_char["y0"]
+        if np.sin(theta) != 0:
+            t = y_start / np.sin(theta)
+            if t > 0:
+                x_end = x_start + t * np.cos(theta)
+                y_end = y_start - t * np.sin(theta)
+            else:
+                x_end = x_start
+                y_end = y_start
+        else:
+            x_end = x_start
+            y_end = y_start
+        print(x_end,y_end)    
+        plot_list=overwrite_entry(plot_list,k,j,x_end,y_end)
+        previous_char=get_max_entry(plot_list,k,j)
+        #get the flow characteristics with moc minus ( phi = 0 )
+        #use the endpoints of 'previous_char' as start points, leave edpoints blank,
+        #save this as fan (k+1) char 0 pair 1
+        # get the flow characteristics with moc minus (phi = 0)
+        # use the endpoints of 'previous_char' as start points, leave endpoints blank,
+        # save this as fan (k+1) char 0 pair 1
+        phi_new = 0
+        latest_endpoints=[previous_char["x1"], previous_char["y1"]]
+        nu_new = do_MOC_minus(phi1=previous_char["phi"], nu1=previous_char["nu"], phi2=phi_new)
+        theta=compute_mach_angle([nu_new],[phi_new],0,1.4,True)
+        if j!=N_chars-1:
+            entry = {
+                "theta": theta,  
+                "x0": latest_endpoints[0], "y0": latest_endpoints[0],
+                "x1": None, "y1": None,
+                "type": 1,
+                "fan": k+1,
+                "char": j,
+                "phi": phi_new,
+                "nu": nu_new,
+                "pair_key": 1,
+                "merged": False
+            }
+            plot_list.append(entry)
+        
+        
+        
+            
+            for i in range(j+1,N_chars):
+                print(i-1,j)
+                if i!=N_chars-1:
+                    # get the k fan max pair entry (from previous loop)
+                    prev_entry = get_max_entry(plot_list, k, i)
+                    # get the k+1 fan max pair entry (from just before)
+                    curr_entry = get_max_entry(plot_list, k+1, j)
+                    # compute intersection with linalg - fill in endpoints (don't overwrite)
+                    theta_prev = prev_entry["theta"]
+                    theta_curr = curr_entry["theta"]
+                    x0_prev, y0_prev = prev_entry["x0"], prev_entry["y0"]
+                    x0_curr, y0_curr = curr_entry["x0"], curr_entry["y0"]
+                    A = np.array([[np.cos(theta_prev), -np.cos(theta_curr)],
+                                    [np.sin(theta_prev), -np.sin(theta_curr)]])
+                    b = np.array([x0_curr - x0_prev, y0_curr - y0_prev])
+                    try:
+                        t, s = np.linalg.solve(A, b)
+                        x_int = x0_prev + t * np.cos(theta_prev)
+                        y_int = y0_prev + t * np.sin(theta_prev)
+                    except np.linalg.LinAlgError:
+                        x_int, y_int = x0_prev, y0_prev  # fallback if no intersection
+
+                    overwrite_entry(plot_list,k+1,j,x_int,y_int)
+                    overwrite_entry(plot_list,k,i,x_int,y_int)
+                    latest_endpoints=[x_int,y_int]
+                    nu_new=0.5*(prev_entry['nu']+curr_entry['nu']+prev_entry['phi']-curr_entry['phi'])
+                    phi_new=0.5*(prev_entry['nu']-curr_entry['nu']+prev_entry['phi']+curr_entry['phi'])
+                    theta=compute_mach_angle([nu_new],[phi_new],0,1.4,True)
+                    entry = {
+                        "theta": theta,  # to be filled later
+                        "x0": latest_endpoints[0], "y0": latest_endpoints[0],
+                        "x1": None, "y1": None,
+                        "type": 1,
+                        "fan": k,
+                        "char": i,
+                        "phi": phi_new,
+                        "nu": nu_new,
+                        "pair_key": j+1,
+                        "merged": False
+                    }
+                    plot_list.append(entry)
+                    theta=compute_mach_angle([nu_new],[phi_new],0,1.4,False)
+                    entry = {
+                        "theta": theta,  # to be filled later
+                        "x0": latest_endpoints[0], "y0": latest_endpoints[0],
+                        "x1": None, "y1": None,
+                        "type": 1,
+                        "fan": k+1,
+                        "char": j,
+                        "phi": phi_new,
+                        "nu": nu_new,
+                        "pair_key": i+1,
+                        "merged": False
+                    }
+                    plot_list.append(entry)
+                    
+                    #get flow characteristics (moc minus and get them from intersection of charactersitics) for fan k pair 1 & save with start points as the previous endpoints and no endpoints
+                    #get flow characteristics (moc plus and get them from intersection of charactersitics) for fan k+1 pair 2 & save with start points as the previous endpoints and no endpoints
+                else:
+                    
+
+                    # Upwards char j in fan k+1
+                    prev_char_entry = get_max_entry(plot_list, k+1, j)
+                    entry= get_min_entry(plot_list,k+1,j)
+                    x_end,y_end=prev_char_entry['x1'],prev_char_entry['y1']
+                    entry['x0']=x_end
+                    entry['y0']=y_end
+                    for idx, en in enumerate(plot_list):
+                        if en["fan"] == k and en["char"] == j and en["pair_key"] == 0:
+                            plot_list[idx] = entry
+                            break
+                        else:
+                            # If not found, append
+                            plot_list.append(entry)
+                        
+                    
+                    
+        else:
+            entry_kp1_0 = get_entry(plot_list, k+1, j)
+            print('theentry',entry_kp1_0)
+
+            entry_kp1_0['x0']=x_end
+            entry_kp1_0['y0']=y_end
+            # Overwrite based on fan and char identity
+            for idx, entry in enumerate(plot_list):
+                if entry["fan"] == k and entry["char"] == j and entry["pair_key"] == 0:
+                    plot_list[idx] = entry_kp1_0
+                    break
+            else:
+                # If not found, append
+                plot_list.append(entry_kp1_0)
     
     return plot_list
 
-def compute_reflection_from_shear(plot_list,fan):
+def compute_reflection_from_shear(plot_list,k):
     #fan is the inbound fan number (starting with 0 )
     return plot_list
 
@@ -478,8 +651,8 @@ for i in range(len(nulist) - 1):  # for each fan
         if i == 0:
             if debug:
                 print("First fan, j=", j)
-            plot_list=store_downwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,0,a)  
-        #instead of computing each up and down case, compute an up and down case and do each characterstic across both cases
+            plot_list=store_downwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,0,a)
+            #instead of computing each up and down case, compute an up and down case and do each characterstic across both cases
         #for upward case, store the flow phi and pm angle for each char
         elif i%2==1: #odd fan, upward case
             #store current characterisitc flow properties, dont do any geometry with start and end points yet
@@ -494,13 +667,13 @@ for i in range(len(nulist) - 1):  # for each fan
             print("Error in fan counting")
             exit()
         
-
-
+plot_list_df = pd.DataFrame(plot_list)
+print(plot_list_df)
 #compute non_simple_regions
 
 for i in range(len(nulist) - 1):  # for each fan
-    if i%2==0: #fan at the middle
-        plot_list=compute_reflection_from_middle(plot_list=plot_list,fan=i)
+    if i==0: #fan at the middle
+        plot_list=compute_reflection_from_middle(plot_list=plot_list,k=i)
         
 
 if debug:
