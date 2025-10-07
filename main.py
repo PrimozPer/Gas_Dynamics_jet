@@ -104,8 +104,6 @@ def get_entry(plot_list, fan, char):
 
 
 
-
-
 def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list):
     if np.sin(theta) != 0:
                 t = y_start / np.sin(theta)
@@ -137,10 +135,10 @@ def compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulis
     return new_reflected
 
 
-def store_upwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list):
+def store_upwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,xstart=None,ystart=None):
     entry = {
         "theta": theta,  # to be filled later
-        "x0": None, "y0": None,
+        "x0": xstart, "y0": ystart,
         "x1": None, "y1": None,
         "type": 1,
         "fan": i,
@@ -153,10 +151,10 @@ def store_upwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list):
     plot_list.append(entry)
     return plot_list
 
-def store_downwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list):
+def store_downwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,xstart=None,ystart=None):
     entry = {
         "theta": theta,  # to be filled later
-        "x0": None, "y0": None,
+        "x0": xstart, "y0": ystart,
         "x1": None, "y1": None,
         "type": 1,
         "fan": i,
@@ -167,6 +165,18 @@ def store_downwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list):
         "merged": False
     }
     plot_list.append(entry)
+    return plot_list
+
+
+def compute_reflection_from_middle(plot_list,fan):
+    #fan is the inbound fan number (starting with 0 )
+    
+    
+    
+    return plot_list
+
+def compute_reflection_from_shear(plot_list,fan):
+    #fan is the inbound fan number (starting with 0 )
     return plot_list
 
 def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta_now):
@@ -206,9 +216,6 @@ def compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta_now):
     
     x_start = prev_char_start['x1']
     y_start = prev_char_start['y1'] #y should be 0
-    
-    
-    
 
     theta = get_entry(plot_list, i, j)['theta']
     if debug:
@@ -353,7 +360,7 @@ def plotting_routine(plot_list):
 #############################
 
 
-debug=0
+debug=1
 
 pa=101325 #Pa
 pe=2*pa
@@ -379,6 +386,7 @@ nulist.append(PM_boundary)
 shockwave=False
 
 plot_list=[]
+
 
 ######get the user input#######
 
@@ -417,7 +425,7 @@ while shockwave==False:
     elif len(philist)==len(nulist) and philist[-1]==0:
         nulist.append(PM_boundary) #we are on the inner edge, moving outwards next
     
-    
+inter_mat=np.zeros([N_chars,N_chars,len(philist)])
 
 
 
@@ -429,13 +437,6 @@ start_points = [shear_anchor] * N_chars   # nozzle lip
 reflected = [False] * N_chars       # track if ray has bounced
 
 for i in range(len(nulist) - 1):  # for each fan
-    
-    # ## Shear Line ##
-    # length = a * 5  # finite length
-    # x_edge = length * np.cos(philist[i])
-    # y_edge = a + length * np.sin(philist[i])
-    # plt.plot([0, x_edge], [a, y_edge], '--', color='gray')
-
     
     # Divide the fan into N_chars characteristics
     dphi = (philist[i] - philist[i+1]) / (N_chars - 1)
@@ -477,16 +478,16 @@ for i in range(len(nulist) - 1):  # for each fan
         if i == 0:
             if debug:
                 print("First fan, j=", j)
-            compute_fan_gamma_minus(theta, x_start, y_start, N_chars, philist_fan, nulist_fan, start_points, reflected,plot_list)        
+            plot_list=store_downwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,0,a)  
         #instead of computing each up and down case, compute an up and down case and do each characterstic across both cases
         #for upward case, store the flow phi and pm angle for each char
         elif i%2==1: #odd fan, upward case
             #store current characterisitc flow properties, dont do any geometry with start and end points yet
-            plot_list=store_upwards_char_info(i,j,philist_fan,nulist_fan,theta,plot_list)
+            plot_list=store_upwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list)
             if debug:
                 print("Upward case, j=", j)
         elif i%2==0: #even fan, downward case
-            compute_reflection_from_shear_line(i,j,plot_list,shear_anchor,theta)
+            plot_list=store_downwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list)  
             if debug:
                 print("Downward case, j=", j)
         else:
@@ -495,17 +496,19 @@ for i in range(len(nulist) - 1):  # for each fan
         
 
 
+#compute non_simple_regions
 
-    # update
-    start_points = new_start_points
-    reflected = new_reflected#reverse to maintain bottom-to-top order
-
+for i in range(len(nulist) - 1):  # for each fan
+    if i%2==0: #fan at the middle
+        plot_list=compute_reflection_from_middle(plot_list=plot_list,fan=i)
+        
 
 if debug:
     plot_list_df = pd.DataFrame(plot_list)
     print("_______________________")
     print("Plotting list storing all lines to be plotted (theta, x_start, y_start, x_end, y_end, type (1 for char 2 for shear), fan, char):")
     print(plot_list_df)
+    print(inter_mat)
     print("Do you wish to save it as a csv? (y/n)")
     save_csv = input().lower()
     if save_csv == 'y':
@@ -514,12 +517,3 @@ if debug:
     else:
         print("Not saved.")
     
-
-print('Computed, see graph.')
-end_time = time.time()
-print(f"Execution time: {end_time - start_time} seconds")
-plotting_routine(plot_list)
-#end timing
-
-print(f"Execution time: {end_time - start_time:.4f} seconds")
-
