@@ -104,6 +104,14 @@ def get_entry(plot_list, fan, char):
             return entry
     raise KeyError(f"No entry found with fan={fan}, char={char}")
 
+def get_entry_by_key(plot_list, fan, char, pair_key):
+    for entry in plot_list:
+        if (entry["fan"] == fan and 
+            entry["char"] == char and 
+            entry["pair_key"] == pair_key):
+            return entry
+    raise KeyError(f"No entry found with fan={fan}, char={char}, pair_key={pair_key}")
+
 
 def get_max_entry(plot_list, fan, char):
     hold_list=[]
@@ -113,7 +121,6 @@ def get_max_entry(plot_list, fan, char):
             
     if hold_list==[]:
         raise KeyError(f"No entry found with fan={fan}, char={char}")
-    print(max(hold_list, key=lambda x: x["pair_key"]))
     return max(hold_list, key=lambda x: x["pair_key"])
 def get_min_entry(plot_list, fan, char):
     hold_list=[]
@@ -189,162 +196,211 @@ def store_downwards_simple_region(i,j,philist_fan,nulist_fan,theta,plot_list,xst
     }
     plot_list.append(entry)
     return plot_list
-def overwrite_entry(plot_list,fan,char,xend,yend):
-    entry_kp1_0 = get_max_entry(plot_list, fan, char)
-    entry_kp1_0["x1"] = xend
-    entry_kp1_0["y1"] = yend
-    # Overwrite if entry exists, otherwise append
-    found = False
+def replace_entry(plot_list, fan, char, pair_key, new_entry):
+    """
+    Replaces an entry in plot_list that matches fan, char, and pair_key.
+    If no such entry exists, appends the new one.
+    """
+
     for idx, entry in enumerate(plot_list):
-        if entry is entry_kp1_0:
-            plot_list[idx] = entry_kp1_0
-            found = True
+        if (entry["fan"] == fan and 
+            entry["char"] == char and 
+            entry["pair_key"] == pair_key):
+            plot_list[idx] = new_entry
             break
-    if not found:
-        plot_list.append(entry_kp1_0)
+    else:
+        # Only runs if no break occurs → entry not found
+        plot_list.append(new_entry)
+
     return plot_list
+
 
 def compute_reflection_from_middle(plot_list,k):
     #fan is the inbound fan number (starting with 0 )
     for j in range(N_chars):
-        print("new J")
-        previous_char=get_max_entry(plot_list,k,j)
-        theta = previous_char["theta"]
-        x_start = previous_char["x0"]
-        y_start = previous_char["y0"]
+        entry=get_max_entry(plot_list,k,j) #get i=j just before the ground C-
+        # Compute intersection of characteristic line with y=0
+        x_start = entry['x0']
+        y_start = entry['y0']
+        theta = entry['theta']
         if np.sin(theta) != 0:
             t = y_start / np.sin(theta)
             if t > 0:
                 x_end = x_start + t * np.cos(theta)
                 y_end = y_start - t * np.sin(theta)
-            else:
-                x_end = x_start
-                y_end = y_start
-        else:
-            x_end = x_start
-            y_end = y_start
-        print(x_end,y_end)    
-        plot_list=overwrite_entry(plot_list,k,j,x_end,y_end)
-        previous_char=get_max_entry(plot_list,k,j)
-        #get the flow characteristics with moc minus ( phi = 0 )
-        #use the endpoints of 'previous_char' as start points, leave edpoints blank,
-        #save this as fan (k+1) char 0 pair 1
-        # get the flow characteristics with moc minus (phi = 0)
-        # use the endpoints of 'previous_char' as start points, leave endpoints blank,
-        # save this as fan (k+1) char 0 pair 1
-        phi_new = 0
-        latest_endpoints=[previous_char["x1"], previous_char["y1"]]
-        nu_new = do_MOC_minus(phi1=previous_char["phi"], nu1=previous_char["nu"], phi2=phi_new)
-        theta=compute_mach_angle([nu_new],[phi_new],0,1.4,True)
+                entry["x1"] = x_end
+                entry["y1"] = y_end
+                plot_list=replace_entry(plot_list,entry['fan'],entry['char'],entry['pair_key'],entry)
+        
+        
+        #treat last char seperately
         if j!=N_chars-1:
+            print("Running inner loop")
+            phi_loc=0
+            region_above=get_max_entry(plot_list,k,j)
+            nu_loc=region_above['phi']+region_above['nu'] #since phi=0
+            theta=compute_mach_angle([nu_loc],[phi_loc],0,1.4,False)
             entry = {
-                "theta": theta,  
-                "x0": latest_endpoints[0], "y0": latest_endpoints[0],
+                "theta": theta,  # to be filled later
+                "x0": x_end, "y0": y_end,
                 "x1": None, "y1": None,
                 "type": 1,
                 "fan": k+1,
                 "char": j,
-                "phi": phi_new,
-                "nu": nu_new,
+                "phi": phi_loc,
+                "nu": nu_loc,
                 "pair_key": 1,
                 "merged": False
             }
             plot_list.append(entry)
-        
-        
-        
             
-            for i in range(j+1,N_chars):
-                print(i-1,j)
+            for i in range (j+1,N_chars):
                 if i!=N_chars-1:
-                    # get the k fan max pair entry (from previous loop)
-                    prev_entry = get_max_entry(plot_list, k, i)
-                    # get the k+1 fan max pair entry (from just before)
-                    curr_entry = get_max_entry(plot_list, k+1, j)
-                    # compute intersection with linalg - fill in endpoints (don't overwrite)
-                    theta_prev = prev_entry["theta"]
-                    theta_curr = curr_entry["theta"]
-                    x0_prev, y0_prev = prev_entry["x0"], prev_entry["y0"]
-                    x0_curr, y0_curr = curr_entry["x0"], curr_entry["y0"]
-                    A = np.array([[np.cos(theta_prev), -np.cos(theta_curr)],
-                                    [np.sin(theta_prev), -np.sin(theta_curr)]])
-                    b = np.array([x0_curr - x0_prev, y0_curr - y0_prev])
-                    try:
-                        t, s = np.linalg.solve(A, b)
-                        x_int = x0_prev + t * np.cos(theta_prev)
-                        y_int = y0_prev + t * np.sin(theta_prev)
-                    except np.linalg.LinAlgError:
-                        x_int, y_int = x0_prev, y0_prev  # fallback if no intersection
+                    print(i-1,j)
+                    entry_above=get_max_entry(plot_list,k,i) #gamma -
+                    entry_below=get_max_entry(plot_list,k+1,j) #gamma +
+                    print("entry above",entry_above)
+                    print("entry Below",entry_below)
+                    # Find intersection of entry_above and entry_below characteristic lines
+                    theta_above = entry_above['theta']
+                    theta_below = entry_below['theta']
+                    x0_above, y0_above = entry_above['x0'], entry_above['y0']
+                    x0_below, y0_below = entry_below['x0'], entry_below['y0']
 
-                    overwrite_entry(plot_list,k+1,j,x_int,y_int)
-                    overwrite_entry(plot_list,k,i,x_int,y_int)
-                    latest_endpoints=[x_int,y_int]
-                    nu_new=0.5*(prev_entry['nu']+curr_entry['nu']+prev_entry['phi']-curr_entry['phi'])
-                    phi_new=0.5*(prev_entry['nu']-curr_entry['nu']+prev_entry['phi']+curr_entry['phi'])
-                    theta=compute_mach_angle([nu_new],[phi_new],0,1.4,True)
+                    A = np.array([
+                        [np.cos(theta_above), -np.cos(theta_below)],
+                        [np.sin(theta_above), -np.sin(theta_below)]
+                    ])
+                    b = np.array([x0_below - x0_above, y0_below - y0_above])
+
+                    try:
+                        t_above, t_below = np.linalg.solve(A, b)
+                        x_inter = x0_above + t_above * np.cos(theta_above)
+                        y_inter = y0_above + t_above * np.sin(theta_above)
+                        # Update entry_above and entry_below with intersection point
+                        entry_above['x1'] = x_inter
+                        entry_above['y1'] = y_inter
+                        entry_below['x1'] = x_inter
+                        entry_below['y1'] = y_inter
+                        plot_list = replace_entry(plot_list, entry_above['fan'], entry_above['char'], entry_above['pair_key'], entry_above)
+                        plot_list = replace_entry(plot_list, entry_below['fan'], entry_below['char'], entry_below['pair_key'], entry_below)
+                    except np.linalg.LinAlgError:
+                        print("Error in linalg")
+                        pass
+                    
+                    
+                    phi_loc=0.5*(entry_above['phi']+entry_above['nu']+entry_below['phi']-entry_below['nu'])
+                    nu_loc=0.5*(entry_above['phi']+entry_above['nu']-entry_below['phi']+entry_below['nu'])
+                    theta_up=compute_mach_angle([nu_loc],[phi_loc],0,1.4,True)
+                    theta_down=compute_mach_angle([nu_loc],[phi_loc],0,1.4,False)
+                    
+                    #add upwards_line
                     entry = {
-                        "theta": theta,  # to be filled later
-                        "x0": latest_endpoints[0], "y0": latest_endpoints[0],
-                        "x1": None, "y1": None,
-                        "type": 1,
-                        "fan": k,
-                        "char": i,
-                        "phi": phi_new,
-                        "nu": nu_new,
-                        "pair_key": j+1,
-                        "merged": False
-                    }
-                    plot_list.append(entry)
-                    theta=compute_mach_angle([nu_new],[phi_new],0,1.4,False)
-                    entry = {
-                        "theta": theta,  # to be filled later
-                        "x0": latest_endpoints[0], "y0": latest_endpoints[0],
+                        "theta": theta_up,  # to be filled later
+                        "x0": x_inter, "y0": y_inter,
                         "x1": None, "y1": None,
                         "type": 1,
                         "fan": k+1,
                         "char": j,
-                        "phi": phi_new,
-                        "nu": nu_new,
-                        "pair_key": i+1,
+                        "phi": phi_loc,
+                        "nu": nu_loc,
+                        "pair_key": entry_below['pair_key']+1,
+                        "merged": False
+                    }
+                    plot_list.append(entry)
+                    #add downwards_line
+                    entry = {
+                        "theta": theta_down,  # to be filled later
+                        "x0": x_inter, "y0": y_inter,
+                        "x1": None, "y1": None,
+                        "type": 1,
+                        "fan": k,
+                        "char": i,
+                        "phi": phi_loc,
+                        "nu": nu_loc,
+                        "pair_key": entry_above['pair_key']+1,
                         "merged": False
                     }
                     plot_list.append(entry)
                     
-                    #get flow characteristics (moc minus and get them from intersection of charactersitics) for fan k pair 1 & save with start points as the previous endpoints and no endpoints
-                    #get flow characteristics (moc plus and get them from intersection of charactersitics) for fan k+1 pair 2 & save with start points as the previous endpoints and no endpoints
                 else:
-                    
+                    entry_above=get_max_entry(plot_list,k,i) #gamma -
+                    entry_below=get_max_entry(plot_list,k+1,j) #gamma +
+                    print("entry abouve",entry_above)
+                    print("entry Below",entry_below)
+                    # Find intersection of entry_above and entry_below characteristic lines
+                    theta_above = entry_above['theta']
+                    theta_below = entry_below['theta']
+                    x0_above, y0_above = entry_above['x0'], entry_above['y0']
+                    x0_below, y0_below = entry_below['x0'], entry_below['y0']
 
-                    # Upwards char j in fan k+1
-                    prev_char_entry = get_max_entry(plot_list, k+1, j)
-                    entry= get_min_entry(plot_list,k+1,j)
-                    x_end,y_end=prev_char_entry['x1'],prev_char_entry['y1']
-                    entry['x0']=x_end
-                    entry['y0']=y_end
-                    for idx, en in enumerate(plot_list):
-                        if en["fan"] == k and en["char"] == j and en["pair_key"] == 0:
-                            plot_list[idx] = entry
-                            break
-                        else:
-                            # If not found, append
-                            plot_list.append(entry)
-                        
+                    A = np.array([
+                        [np.cos(theta_above), -np.cos(theta_below)],
+                        [np.sin(theta_above), -np.sin(theta_below)]
+                    ])
+                    b = np.array([x0_below - x0_above, y0_below - y0_above])
+
+                    try:
+                        t_above, t_below = np.linalg.solve(A, b)
+                        x_inter = x0_above + t_above * np.cos(theta_above)
+                        y_inter = y0_above + t_above * np.sin(theta_above)
+                        # Update entry_above and entry_below with intersection point
+                        entry_above['x1'] = x_inter
+                        entry_above['y1'] = y_inter
+                        entry_below['x1'] = x_inter
+                        entry_below['y1'] = y_inter
+                        plot_list = replace_entry(plot_list, entry_above['fan'], entry_above['char'], entry_above['pair_key'], entry_above)
+                        plot_list = replace_entry(plot_list, entry_below['fan'], entry_below['char'], entry_below['pair_key'], entry_below)
+                    except np.linalg.LinAlgError:
+                        print("Error in linalg")
+                        pass
                     
                     
+                    phi_loc=0.5*(entry_above['phi']+entry_above['nu']+entry_below['phi']-entry_below['nu'])
+                    nu_loc=0.5*(entry_above['phi']+entry_above['nu']-entry_below['phi']+entry_below['nu'])
+                    theta_up=compute_mach_angle([nu_loc],[phi_loc],0,1.4,True)
+                    theta_down=compute_mach_angle([nu_loc],[phi_loc],0,1.4,False)
+                    #add downwards_line
+                    entry = {
+                        "theta": theta_down,  # to be filled later
+                        "x0": x_inter, "y0": y_inter,
+                        "x1": None, "y1": None,
+                        "type": 1,
+                        "fan": k,
+                        "char": i,
+                        "phi": phi_loc,
+                        "nu": nu_loc,
+                        "pair_key": entry_above['pair_key']+1,
+                        "merged": False
+                    }
+                    plot_list.append(entry)
+                    check_entry=get_entry_by_key(plot_list,k+1,j,0)
+                    print("CHECK HERE: ",check_entry['theta'],theta_up)
+                    entry = {
+                    "theta": theta_up,  # to be filled later
+                    "x0": x_inter, "y0": y_inter,
+                    "x1": None, "y1": None,
+                    "type": 1,
+                    "fan": k+1,
+                    "char": j,
+                    "phi": phi_loc,
+                    "nu": nu_loc,
+                    "pair_key": 0, #set to 0 for simple region
+                    "merged": False
+                    }
+                    plot_list=replace_entry(plot_list,check_entry['fan'],check_entry['char'],0,entry)
+                    
+            
         else:
-            entry_kp1_0 = get_entry(plot_list, k+1, j)
-            print('theentry',entry_kp1_0)
-
-            entry_kp1_0['x0']=x_end
-            entry_kp1_0['y0']=y_end
-            # Overwrite based on fan and char identity
-            for idx, entry in enumerate(plot_list):
-                if entry["fan"] == k and entry["char"] == j and entry["pair_key"] == 0:
-                    plot_list[idx] = entry_kp1_0
-                    break
-            else:
-                # If not found, append
-                plot_list.append(entry_kp1_0)
+            entry=get_entry_by_key(plot_list,k+1,j,0)
+            entry['x0']=x_end
+            entry['y0']=y_end
+            plot_list=replace_entry(plot_list,k+1,j,0,entry)
+            print("Running else")
+            
+        plot_list_df = pd.DataFrame(plot_list)
+        print(plot_list_df)
+    
     
     return plot_list
 
@@ -675,7 +731,7 @@ for i in range(len(nulist) - 1):  # for each fan
     if i==0: #fan at the middle
         plot_list=compute_reflection_from_middle(plot_list=plot_list,k=i)
         
-
+plotting_routine(plot_list)
 if debug:
     plot_list_df = pd.DataFrame(plot_list)
     print("_______________________")
